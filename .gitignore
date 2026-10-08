@@ -1,0 +1,4 @@
+.vscode
+.env
+app-config.yaml
+app-secrets.yaml

@@ -1,0 +1,13 @@
+FROM maven:3.9.6-eclipse-temurin-21 AS DEV
+
+# Set working directory inside the container
+WORKDIR /app
+
+# Copy pom.xml and download dependencies first (cached layer)
+COPY pom.xml .
+
+# Copy the rest of your source code
+COPY src ./src
+
+# Run the app
+CMD ["mvn", "spring-boot:run"]

@@ -1,0 +1,360 @@
+services:
+  user-service:
+    build:
+      context: ./userService
+      dockerfile: Dockerfile.dev
+    deploy:
+      replicas: 1
+    volumes:
+      - ./userService/target:/app/target
+      - ./userService/src:/app/src
+      - ~/.m2:/root/.m2
+    restart: always
+    depends_on:
+      eureka:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:${MANAGEMENT_PORT}/actuator/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - micro-net
+    mem_limit: 600m
+    cpus: "1.0"
+    environment:
+      - JAVA_TOOL_OPTIONS=-XX:+UseContainerSupport -Xms256m -Xmx384m
+    env_file: .env
+
+  auth-service:
+    build:
+      context: ./authService
+      dockerfile: Dockerfile.dev
+    deploy:
+      replicas: 1
+    volumes:
+      - ./authService/target:/app/target
+      - ./authService/src:/app/src
+      - ~/.m2:/root/.m2
+    restart: always
+    depends_on:
+      eureka:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:${MANAGEMENT_PORT}/actuator/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - micro-net
+    mem_limit: 600m
+    cpus: "1.0"
+    environment:
+      - JAVA_TOOL_OPTIONS=-XX:+UseContainerSupport -Xms256m -Xmx384m
+    env_file: .env
+
+  mail-service:
+    build:
+      context: ./mailService
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./mailService/target:/app/target
+      - ./mailService/src:/app/src
+      - ~/.m2:/root/.m2
+    restart: always
+    deploy:
+      replicas: 1
+    depends_on:
+      eureka:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:${MANAGEMENT_PORT}/actuator/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - micro-net
+    mem_limit: 600m
+    cpus: "1.0"
+    environment:
+      - JAVA_TOOL_OPTIONS=-XX:+UseContainerSupport -Xms256m -Xmx384m
+    env_file: .env
+
+  eureka:
+    build:
+      context: ./eureka
+      dockerfile: Dockerfile.dev
+    container_name: eureka
+    restart: always
+    ports:
+      - "8761:8761"
+    networks:
+      - micro-net
+    mem_limit: 700m
+    cpus: "1.2"
+    environment:
+      - JAVA_TOOL_OPTIONS=-XX:+UseContainerSupport -Xms256m -Xmx512m
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8761/actuator/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  config-server:
+    build:
+      context: ./configServer
+      dockerfile: Dockerfile.dev
+    container_name: config-server
+    volumes:
+      - ./configServer/target:/app/target
+      - ./configServer/src:/app/src
+      - ~/.m2:/root/.m2
+    restart: always
+    ports:
+      - "8888:8888"
+    depends_on:
+      eureka:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8888/actuator/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 50s
+    networks:
+      - micro-net
+    mem_limit: 300m
+    cpus: "0.6"
+    environment:
+      - JAVA_TOOL_OPTIONS=-XX:+UseContainerSupport -Xms128m -Xmx200m
+    env_file:
+      - .env
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile.dev
+    container_name: gateway
+    volumes:
+      - ./gateway/target:/app/target
+      - ./gateway/src:/app/src
+      - ~/.m2:/root/.m2
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      eureka:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:${MANAGEMENT_PORT}/actuator/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - micro-net
+    mem_limit: 600m
+    cpus: "1.0"
+    environment:
+      - JAVA_TOOL_OPTIONS=-XX:+UseContainerSupport -Xms256m -Xmx384m
+    env_file: .env
+
+  db:
+    image: postgres:15
+    container_name: db
+    restart: always
+    ports:
+      - "2500:5432"
+    mem_limit: 800m
+    cpus: "1.5"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - micro-net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    restart: always
+    ports:
+      - "19092:29092"
+    mem_limit: 1.2g
+    cpus: "2.0"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server kafka:29092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:19092,CONTROLLER://kafka:29093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:19092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - micro-net
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - micro-net
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  loki:
+    image: grafana/loki:3.1.1
+    container_name: loki
+    restart: always
+    ports:
+      - "3100:3100"
+    command: [ "-config.file=/etc/loki/config.yml" ]
+    volumes:
+      - ./observability/loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    networks:
+      - micro-net
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  promtail:
+    image: grafana/promtail:3.1.1
+    container_name: promtail
+    restart: always
+    command: [ "-config.file=/etc/promtail/config.yml" ]
+    depends_on:
+      loki:
+        condition: service_healthy
+    volumes:
+      - ./observability/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - promtail-data:/tmp
+    networks:
+      - micro-net
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      loki:
+        condition: service_healthy
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - micro-net
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  zipkin:
+    image: openzipkin/zipkin:3.3
+    container_name: zipkin
+    restart: always
+    ports:
+      - "9411:9411"
+    mem_limit: 512m
+    cpus: "0.8"
+    networks:
+      - micro-net
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:9411/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus-config.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - micro-net
+    mem_limit: 300m
+    cpus: "0.5"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  micro-net:
+
+volumes:
+  postgres-data:
+  zookeeper-data:
+  zookeeper-logs:
+  kafka-data:
+  redis-data:
+  loki-data:
+  promtail-data:
+  grafana-data:
+  prometheus-data:
